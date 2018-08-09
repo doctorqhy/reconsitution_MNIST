@@ -1,0 +1,84 @@
+import tensorflow as tf
+import time
+from tensorflow.examples.tutorials.mnist import input_data
+import mnist_inference
+import mnist_train
+
+
+eval_interval_secs = 10
+
+def evaluate(mnist):
+
+    with tf.Graph().as_default() as g:
+
+        x = tf.placeholder(tf.float32,[None,mnist_inference.input_node],name='x-input')
+        y_ = tf.placeholder(tf.float32,[None,mnist_inference.output_node],name='y-input')
+        #验证数据
+        validata_feed = {x:mnist.validation.images,y_:mnist.validation.labels}
+
+        #预测时不需要计算正则化损失
+        y = mnist_inference.inference(x,None)
+
+        correct_prediction = tf.equal(tf.argmax(y,1),tf.argmax(y_,1))
+        accurancy = tf.reduce_mean(tf.cast(correct_prediction,tf.float32))
+
+        variable_averages = tf.train.ExponentialMovingAverage(mnist_train.moving_avreage_decay)
+        variable_to_restore = variable_averages.variables_to_restore()
+        saver = tf.train.Saver(variable_to_restore)
+
+        while True:
+
+            with tf.Session() as sess:
+
+                #加载目录中最新模型的文件名
+                ckpt = tf.train.get_checkpoint_state(mnist_train.model_save_path)
+
+                if ckpt and ckpt.model_checkpoint_path:
+
+                    saver.restore(sess,ckpt.model_checkpoint_path)
+                    #通过文件名得到模型保存时迭代的轮数
+                    global_step = ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1]
+                    accurancy_score = sess.run(accurancy,feed_dict=validata_feed)
+                    print('after %s training step,validation accurancy = %g'%(global_step,accurancy_score))
+
+                else:
+
+                    print('No checkpoint file found')
+                    return
+
+            time.sleep(eval_interval_secs)
+
+
+def evaluate_classify(mnist):
+
+    with tf.Graph().as_default() as g:
+
+        x = tf.placeholder(tf.float32,[None,mnist_inference.input_node],name='x-input')
+        y_ = tf.placeholder(tf.float32,[None,mnist_inference.output_node],name='y-input')
+        validata_feed = {x:mnist.validation.images,y_:mnist.validation.labels}
+
+        #得到预测值
+        y = mnist_inference.inference(x,None)
+
+        #得到分类的结果
+        classify = tf.argmax(y,1)
+
+        #以变量重命名方式加载滑动平均模型，用在测试数据上
+        variable_averages = tf.train.ExponentialMovingAverage(mnist_train.moving_avreage_decay)
+        variable_to_restore = variable_averages.variables_to_restore()
+        saver = tf.train.Saver(variable_to_restore)
+
+        with tf.Session() as sess:
+
+            #加载第26000轮训练的模型
+            saver.restore(sess,'model/model.ckpt-26001')
+            classify_ = sess.run(classify,feed_dict={x:mnist.test.images[1].reshape([1,784])})
+            print('classify is %s'%classify_[0])
+
+
+def main():
+    mnist = input_data.read_data_sets('MNIST_data',one_hot=True)
+    evaluate(mnist)
+
+
+main()
